@@ -13,6 +13,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     error: v.optional(v.string()),
+    originalFileId: v.optional(v.id("_storage")),
   }).index("by_createdAt", ["createdAt"]),
 
   slides: defineTable({
