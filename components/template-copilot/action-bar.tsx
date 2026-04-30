@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { formatDistanceToNow } from "date-fns";
 import { useState } from "react";
 import { api } from "@/convex/_generated/api";
@@ -85,8 +85,31 @@ export function ActionBar({
 
   const ctaDisabled = isStarting || isJobActive || missingRequired;
   const showSpinner = isJobActive || isStarting;
+
+  const downloadUrl = useQuery(
+    api.files.getDownloadUrl,
+    latestGenerationJob?.outputFileId
+      ? { storageId: latestGenerationJob.outputFileId }
+      : "skip",
+  );
+
   const downloadDisabled =
-    !latestGenerationJob || latestGenerationJob.status !== "complete";
+    !latestGenerationJob ||
+    latestGenerationJob.status !== "complete" ||
+    !latestGenerationJob.outputFileId ||
+    !downloadUrl;
+
+  const downloadInner = (
+    <>
+      <Download className="w-5 h-5" />
+      <div className="flex flex-col items-start">
+        <span className="font-medium">Download .pptx</span>
+        <span className="text-xs text-muted-foreground">
+          Download current filled file
+        </span>
+      </div>
+    </>
+  );
 
   async function handleGenerate() {
     setIsStarting(true);
@@ -150,21 +173,23 @@ export function ActionBar({
           </div>
         </Button>
 
-        <Button
-          type="button"
-          variant="outline"
-          size="lg"
-          className="gap-2 px-5 h-12"
-          disabled={downloadDisabled}
-        >
-          <Download className="w-5 h-5" />
-          <div className="flex flex-col items-start">
-            <span className="font-medium">Download .pptx</span>
-            <span className="text-xs text-muted-foreground">
-              Download current filled file
-            </span>
-          </div>
-        </Button>
+        {!downloadDisabled && downloadUrl ? (
+          <Button asChild variant="outline" size="lg" className="gap-2 px-5 h-12">
+            <a href={downloadUrl} download="generation.json">
+              {downloadInner}
+            </a>
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            className="gap-2 px-5 h-12"
+            disabled
+          >
+            {downloadInner}
+          </Button>
+        )}
 
         <Button variant="outline" size="icon" className="h-12 w-12">
           <MoreVertical className="w-5 h-5" />
