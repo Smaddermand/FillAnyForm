@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as audit from "../audit.js";
 import type * as chat from "../chat.js";
 import type * as fields from "../fields.js";
 import type * as files from "../files.js";
@@ -21,6 +22,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  audit: typeof audit;
   chat: typeof chat;
   fields: typeof fields;
   files: typeof files;

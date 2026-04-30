@@ -1,5 +1,6 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { logAuditEvent } from "./audit";
 
 export const approveField = mutation({
   args: { fieldId: v.id("fields") },
@@ -12,6 +13,11 @@ export const approveField = mutation({
       status: "approved",
       approvedValue: value,
       updatedAt: Date.now(),
+    });
+    await logAuditEvent(ctx, {
+      templateId: field.templateId,
+      action: "field.approved",
+      details: { fieldId, value },
     });
     return null;
   },
@@ -27,6 +33,11 @@ export const updateFieldValue = mutation({
       approvedValue: value,
       updatedAt: Date.now(),
     });
+    await logAuditEvent(ctx, {
+      templateId: field.templateId,
+      action: "field.value_updated",
+      details: { fieldId, value },
+    });
     return null;
   },
 });
@@ -39,6 +50,11 @@ export const rejectField = mutation({
     await ctx.db.patch(fieldId, {
       status: "rejected",
       updatedAt: Date.now(),
+    });
+    await logAuditEvent(ctx, {
+      templateId: field.templateId,
+      action: "field.rejected",
+      details: { fieldId },
     });
     return null;
   },
@@ -64,6 +80,11 @@ export const bulkApproveFields = mutation({
       });
       approved++;
     }
+    await logAuditEvent(ctx, {
+      templateId,
+      action: "field.bulk_approve",
+      details: { approved },
+    });
     return { approved };
   },
 });

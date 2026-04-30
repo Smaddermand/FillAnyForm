@@ -5,6 +5,7 @@ import {
   mutation,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { logAuditEvent } from "./audit";
 
 export const startGeneration = mutation({
   args: { templateId: v.id("templates") },
@@ -29,6 +30,12 @@ export const startGeneration = mutation({
       createdAt: now,
     });
 
+    await logAuditEvent(ctx, {
+      templateId,
+      action: "generation.started",
+      details: { jobId },
+    });
+
     await ctx.scheduler.runAfter(0, internal.jobs.runJob, { jobId });
     return jobId;
   },
@@ -50,19 +57,27 @@ export const runJob = internalMutation({
 export const finalizeJob = internalAction({
   args: { jobId: v.id("generationJobs") },
   handler: async (ctx, { jobId }) => {
-    const json = JSON.stringify(
-      {
+    try {
+      const json = JSON.stringify(
+        {
+          jobId,
+          generatedAt: new Date().toISOString(),
+          note: "Placeholder generation output. Replace with real PPTX bytes once generation is implemented.",
+        },
+        null,
+        2,
+      );
+      const blob = new Blob([json], { type: "application/json" });
+      const outputFileId = await ctx.storage.store(blob);
+      await ctx.runMutation(internal.jobs.completeJob, { jobId, outputFileId });
+      return null;
+    } catch (err) {
+      await ctx.runMutation(internal.jobs.failJob, {
         jobId,
-        generatedAt: new Date().toISOString(),
-        note: "Placeholder generation output. Replace with real PPTX bytes once generation is implemented.",
-      },
-      null,
-      2,
-    );
-    const blob = new Blob([json], { type: "application/json" });
-    const outputFileId = await ctx.storage.store(blob);
-    await ctx.runMutation(internal.jobs.completeJob, { jobId, outputFileId });
-    return null;
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
   },
 });
 
@@ -79,6 +94,34 @@ export const completeJob = internalMutation({
       status: "complete",
       outputFileId,
       completedAt: Date.now(),
+    });
+    await logAuditEvent(ctx, {
+      templateId: job.templateId,
+      action: "generation.completed",
+      details: { jobId, outputFileId },
+    });
+    return null;
+  },
+});
+
+export const failJob = internalMutation({
+  args: {
+    jobId: v.id("generationJobs"),
+    error: v.string(),
+  },
+  handler: async (ctx, { jobId, error }) => {
+    const job = await ctx.db.get("generationJobs", jobId);
+    if (!job) return null;
+
+    await ctx.db.patch(jobId, {
+      status: "failed",
+      error,
+      completedAt: Date.now(),
+    });
+    await logAuditEvent(ctx, {
+      templateId: job.templateId,
+      action: "generation.failed",
+      details: { jobId, error },
     });
     return null;
   },

@@ -3,6 +3,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import { logAuditEvent } from "./audit";
 
 async function insertMockSlidesAndFields(
   ctx: MutationCtx,
@@ -196,6 +197,12 @@ export const createTemplateManualSeed = mutation({
       updatedAt: now,
     });
 
+    await logAuditEvent(ctx, {
+      templateId,
+      action: "template.created",
+      details: { source: "manual_seed" },
+    });
+
     await insertMockSlidesAndFields(ctx, templateId, now);
 
     const chats: Array<Pick<Doc<"chatMessages">, "role" | "content">> = [
@@ -239,6 +246,16 @@ export const createTemplateFromUpload = mutation({
       originalFileId,
       createdAt: now,
       updatedAt: now,
+    });
+    await logAuditEvent(ctx, {
+      templateId,
+      action: "template.created",
+      details: { source: "upload", name },
+    });
+    await logAuditEvent(ctx, {
+      templateId,
+      action: "upload.completed",
+      details: { originalFileId, name },
     });
     await ctx.scheduler.runAfter(0, internal.templates.runAnalysis, {
       templateId,
