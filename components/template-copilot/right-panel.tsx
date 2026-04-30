@@ -65,11 +65,14 @@ export function RightPanel({
 }: RightPanelProps) {
   const [inputValue, setInputValue] = useState("");
   const [isFieldReviewOpen, setIsFieldReviewOpen] = useState(true);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
 
   const approveField = useMutation(api.fields.approveField);
   const updateFieldValue = useMutation(api.fields.updateFieldValue);
   const rejectField = useMutation(api.fields.rejectField);
   const bulkApproveFields = useMutation(api.fields.bulkApproveFields);
+  const sendMessage = useMutation(api.chat.sendMessage);
 
   const [pendingFieldId, setPendingFieldId] = useState<Id<"fields"> | null>(
     null,
@@ -152,6 +155,21 @@ export function RightPanel({
   }
 
   const rowActionBusy = pendingFieldId !== null || isBulkApproving;
+
+  async function handleSendMessage() {
+    const content = inputValue.trim();
+    if (!content) return;
+    setIsSendingMessage(true);
+    setChatError(null);
+    try {
+      await sendMessage({ templateId, content });
+      setInputValue("");
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSendingMessage(false);
+    }
+  }
 
   return (
     <div className="w-96 border-l border-border bg-card flex flex-col shrink-0">
@@ -460,12 +478,31 @@ export function RightPanel({
             placeholder="Type your answer..."
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void handleSendMessage();
+              }
+            }}
             className="flex-1 h-9 text-sm"
+            disabled={isSendingMessage}
           />
-          <Button size="sm" className="h-9 w-9 p-0">
-            <Send className="w-4 h-4" />
+          <Button
+            size="sm"
+            className="h-9 w-9 p-0"
+            onClick={() => void handleSendMessage()}
+            disabled={isSendingMessage || inputValue.trim().length === 0}
+          >
+            {isSendingMessage ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
           </Button>
         </div>
+        {chatError ? (
+          <p className="mt-2 text-xs text-destructive">{chatError}</p>
+        ) : null}
       </div>
     </div>
   );

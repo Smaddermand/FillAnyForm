@@ -8,7 +8,9 @@
  * @module
  */
 
+import type * as chat from "../chat.js";
 import type * as fields from "../fields.js";
+import type * as jobs from "../jobs.js";
 import type * as templates from "../templates.js";
 
 import type {
@@ -18,7 +20,9 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  chat: typeof chat;
   fields: typeof fields;
+  jobs: typeof jobs;
   templates: typeof templates;
 }>;
 

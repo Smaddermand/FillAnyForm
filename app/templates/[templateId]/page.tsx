@@ -26,6 +26,7 @@ export default function TemplateWorkspacePage({
       slides={data.slides}
       fields={data.fields}
       chatMessages={data.chatMessages}
+      latestGenerationJob={data.latestGenerationJob}
     />
   );
 }

@@ -15,6 +15,7 @@ interface Props {
   slides: Doc<"slides">[];
   fields: Doc<"fields">[];
   chatMessages: Doc<"chatMessages">[];
+  latestGenerationJob: Doc<"generationJobs"> | null;
 }
 
 export function WorkspaceShell({
@@ -22,6 +23,7 @@ export function WorkspaceShell({
   slides,
   fields,
   chatMessages,
+  latestGenerationJob,
 }: Props) {
   const [activeSlideId, setActiveSlideId] = useState<Id<"slides"> | null>(
     slides[0]?._id ?? null,
@@ -68,7 +70,11 @@ export function WorkspaceShell({
           fields={fields}
         />
       </div>
-      <ActionBar />
+      <ActionBar
+        templateId={template._id}
+        fields={fields}
+        latestGenerationJob={latestGenerationJob}
+      />
     </div>
   );
 }
