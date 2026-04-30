@@ -2,9 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { format } from "date-fns";
+import { useMutation } from "convex/react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import {
@@ -17,13 +19,28 @@ import {
   CheckCircle2,
   AlertCircle,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import type { Doc } from "@/convex/_generated/dataModel";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { api } from "@/convex/_generated/api";
 
 type ReviewUiStatus = "ready" | "needs-input" | "review";
 
@@ -36,13 +53,33 @@ function fieldStatusToReviewUi(
 }
 
 interface RightPanelProps {
+  templateId: Id<"templates">;
   chatMessages: Doc<"chatMessages">[];
   fields: Doc<"fields">[];
 }
 
-export function RightPanel({ chatMessages, fields }: RightPanelProps) {
+export function RightPanel({
+  templateId,
+  chatMessages,
+  fields,
+}: RightPanelProps) {
   const [inputValue, setInputValue] = useState("");
   const [isFieldReviewOpen, setIsFieldReviewOpen] = useState(true);
+
+  const approveField = useMutation(api.fields.approveField);
+  const updateFieldValue = useMutation(api.fields.updateFieldValue);
+  const rejectField = useMutation(api.fields.rejectField);
+  const bulkApproveFields = useMutation(api.fields.bulkApproveFields);
+
+  const [pendingFieldId, setPendingFieldId] = useState<Id<"fields"> | null>(
+    null,
+  );
+  const [isBulkApproving, setIsBulkApproving] = useState(false);
+  const [editingField, setEditingField] = useState<Doc<"fields"> | null>(
+    null,
+  );
+  const [editValue, setEditValue] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const sortedFields = useMemo(
     () => [...fields].sort((a, b) => a.order - b.order),
@@ -58,6 +95,63 @@ export function RightPanel({ chatMessages, fields }: RightPanelProps) {
     () => fields.filter((f) => f.status === "needs_input").length,
     [fields],
   );
+
+  const suggestedCount = useMemo(
+    () =>
+      fields.filter(
+        (f) => f.status === "suggested" && Boolean(f.suggestedValue),
+      ).length,
+    [fields],
+  );
+
+  async function runRowAction(
+    fieldId: Id<"fields">,
+    action: () => Promise<unknown>,
+  ) {
+    setPendingFieldId(fieldId);
+    setActionError(null);
+    try {
+      await action();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPendingFieldId(null);
+    }
+  }
+
+  function openEdit(field: Doc<"fields">) {
+    setEditingField(field);
+    setEditValue(field.approvedValue ?? field.suggestedValue ?? "");
+    setActionError(null);
+  }
+
+  async function handleSaveEdit() {
+    if (!editingField) return;
+    setPendingFieldId(editingField._id);
+    setActionError(null);
+    try {
+      await updateFieldValue({ fieldId: editingField._id, value: editValue });
+      setEditingField(null);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPendingFieldId(null);
+    }
+  }
+
+  async function handleBulkApprove() {
+    setIsBulkApproving(true);
+    setActionError(null);
+    try {
+      await bulkApproveFields({ templateId });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsBulkApproving(false);
+    }
+  }
+
+  const rowActionBusy = pendingFieldId !== null || isBulkApproving;
 
   return (
     <div className="w-96 border-l border-border bg-card flex flex-col shrink-0">
@@ -164,10 +258,11 @@ export function RightPanel({ chatMessages, fields }: RightPanelProps) {
         <CollapsibleContent>
           <div className="border-t border-border">
             {/* Table header */}
-            <div className="grid grid-cols-[1fr_1.2fr_80px] gap-2 px-4 py-2 text-xs text-muted-foreground border-b border-border bg-muted/30">
+            <div className="grid grid-cols-[1fr_1.2fr_80px_auto] gap-2 px-4 py-2 text-xs text-muted-foreground border-b border-border bg-muted/30 items-center">
               <span>Field</span>
               <span>Suggested value</span>
               <span>Status</span>
+              <span className="sr-only">Actions</span>
             </div>
 
             {/* Table rows */}
@@ -181,10 +276,19 @@ export function RightPanel({ chatMessages, fields }: RightPanelProps) {
                   const uiStatus = fieldStatusToReviewUi(item.status);
                   const displayValue =
                     item.approvedValue ?? item.suggestedValue ?? "—";
+                  const canApprove =
+                    Boolean(item.suggestedValue) &&
+                    (item.status === "suggested" ||
+                      item.status === "rejected");
+                  const showReject =
+                    item.status === "suggested" ||
+                    item.status === "approved" ||
+                    item.status === "rejected";
+
                   return (
                     <div
                       key={item._id}
-                      className="grid grid-cols-[1fr_1.2fr_80px] gap-2 px-4 py-2 text-sm border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors items-center"
+                      className="group grid grid-cols-[1fr_1.2fr_80px_auto] gap-2 px-4 py-2 text-sm border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors items-center"
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="w-5 h-5 rounded-full bg-primary flex items-center justify-center text-[10px] font-bold text-white shrink-0">
@@ -219,23 +323,135 @@ export function RightPanel({ chatMessages, fields }: RightPanelProps) {
                           </>
                         )}
                       </div>
+                      <div className="flex justify-end w-8 shrink-0">
+                        {pendingFieldId === item._id ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                        ) : (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                disabled={rowActionBusy}
+                                className="h-7 w-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-muted-foreground"
+                                aria-label="Field actions"
+                              >
+                                <MoreHorizontal className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-44">
+                              {canApprove ? (
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    runRowAction(item._id, () =>
+                                      approveField({ fieldId: item._id }),
+                                    )
+                                  }
+                                >
+                                  Approve
+                                </DropdownMenuItem>
+                              ) : null}
+                              <DropdownMenuItem onClick={() => openEdit(item)}>
+                                Edit value
+                              </DropdownMenuItem>
+                              {showReject ? (
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    runRowAction(item._id, () =>
+                                      rejectField({ fieldId: item._id }),
+                                    )
+                                  }
+                                >
+                                  Reject
+                                </DropdownMenuItem>
+                              ) : null}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </div>
                     </div>
                   );
                 })
               )}
             </div>
 
-            {/* View all fields link */}
-            <button
-              type="button"
-              className="w-full px-4 py-2 text-sm text-primary hover:underline flex items-center gap-1"
-            >
-              View all fields
-              <ChevronRight className="w-4 h-4" />
-            </button>
+            <div className="flex items-center justify-between border-t border-border">
+              <button
+                type="button"
+                disabled={isBulkApproving || suggestedCount === 0}
+                onClick={handleBulkApprove}
+                className="px-4 py-2 text-sm text-primary hover:underline disabled:opacity-50 flex items-center gap-1"
+              >
+                {isBulkApproving ? (
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                ) : null}
+                Approve all suggested ({suggestedCount})
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 text-sm text-primary hover:underline flex items-center gap-1"
+              >
+                View all fields
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {actionError ? (
+              <p className="px-4 pb-2 text-xs text-destructive">{actionError}</p>
+            ) : null}
           </div>
         </CollapsibleContent>
       </Collapsible>
+
+      <Dialog
+        open={editingField !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingField(null);
+        }}
+      >
+        <DialogContent showCloseButton className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {editingField ? `Edit "${editingField.label}"` : "Edit field"}
+            </DialogTitle>
+          </DialogHeader>
+          {editingField?.type === "longText" ? (
+            <Textarea
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              className="min-h-28 text-sm"
+              rows={5}
+            />
+          ) : (
+            <Input
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              className="text-sm"
+            />
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditingField(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSaveEdit}
+              disabled={pendingFieldId !== null}
+            >
+              {pendingFieldId !== null ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                "Save"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Chat input */}
       <div className="p-3 border-t border-border">

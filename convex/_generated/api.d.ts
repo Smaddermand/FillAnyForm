@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as fields from "../fields.js";
 import type * as templates from "../templates.js";
 
 import type {
@@ -17,6 +18,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  fields: typeof fields;
   templates: typeof templates;
 }>;
 

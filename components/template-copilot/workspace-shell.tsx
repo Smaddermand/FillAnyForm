@@ -62,7 +62,11 @@ export function WorkspaceShell({
           slideNumber={activeSlide?.slideNumber ?? 1}
           totalSlides={slides.length}
         />
-        <RightPanel chatMessages={chatMessages} fields={fields} />
+        <RightPanel
+          templateId={template._id}
+          chatMessages={chatMessages}
+          fields={fields}
+        />
       </div>
       <ActionBar />
     </div>
